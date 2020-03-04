@@ -13,7 +13,7 @@ library(purrr)
 library(caret)
 library(randomForest)
 
-data = as_tibble(iris)
+dataset = as_tibble(iris)
 
 # Input params
 rf = list(
@@ -25,14 +25,14 @@ rf = list(
           )
 
 data = list(
-             data = data,
+             data = dataset,
              target = "Species",
              validation = "kfold_7"
 )
 
-# = = = = = = = = = = = = = = = #
-#     Create expressions df     #
-# = = = = = = = = = = = = = = = #
+# = = = = = = = = = = = = = = = # ----
+#     Create expressions df     # ----
+# = = = = = = = = = = = = = = = # ----
 
 # Control params or fun
 control <- function(obj){
@@ -58,14 +58,16 @@ to_character <- function(obj){
 
 # Put "=" in params
 put_simbols <- function(obj){
-  for(i in 1:length(obj)){
-    names = names(obj[i])
-    str = obj[[i]]
+  for(i in names(obj)){
+    name = i
+    str = obj[[name]]
     
-    obj[[i]] = paste(name, "=", str)    
+    obj[[name]] = paste(name, "=", str)
   }
   return(obj)
 }
+
+###########################
 
 # Dataframe's combinations
 create_expression <- function(obj, data){
@@ -86,7 +88,10 @@ create_expression <- function(obj, data){
                   data = data[['dataset']]) %>%
     dplyr::mutate(expression = paste0(package, 
                                       "::", 
-                                      fun, "(data = data, ", 
+                                      fun,
+                                      "(",
+                                      formula,
+                                      ", data = data, ", 
                                       params, 
                                       ")"),
                   ID = 1:n()) %>%
@@ -96,25 +101,30 @@ create_expression <- function(obj, data){
   return(df)
 }
 
-# = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
-#              Orquestrador
-# = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
-orchestrator <- function(model, data){
-  control = control(model)
-  control[['param']] = control[['param']] %>%
-    map(~to_character(.)) %>%
-    map(~put_simbols(.))
+# = = = = = = = = = = = = = = = # ----
+#   Algorithm for validation    # ----
+# = = = = = = = = = = = = = = = # ----
+
+# Choose the method
+split_by_validation <- function(method){
+  method = data[['validation']]
+  df = data[['data']]
   
-  expression = create_expression(control, data)
+  # K-fold
+  if(grepl(x = method, pattern = 'kfold')){
+    fold = str_split(string = method, pattern = "_")[[1]][2]
+    if(is.na(fold)){
+      fold = 10
+    } else{
+      fold = as.numeric(fold)  
+    }
+    data_list = kfold(df, fold)
+  }
   
-  return(expression)
+  return(data_list)
 }
 
-obj = orchestrator(rf, data)
-
-# = = = = = = = = = = = = = = = #
-#   Algorithm for validation    #'
-# = = = = = = = = = = = = = = = #
+# Methods = = = = = = = =
 
 # K-fold Cross Validation
 kfold <- function(x, folds){
@@ -126,12 +136,51 @@ kfold <- function(x, folds){
   
   new_data <- x %>% 
     dplyr::mutate(fold = index) 
+  
+  list_data = list()
+  for(i in 1:folds){
+    train = new_data %>%
+      dplyr::filter(fold != i)
+    
+    test = new_data %>%
+      dplyr::filter(fold == i)
+    
+    list_data[[i]] = list(train = train, 
+                          test = test)
+  }
+  
+  return(list_data)
+  
 }
 
 # Bootstrap
 # Data split
 # Repeated k-fold CV
 # Leave one out CV
+
+# = = = = = = = = = = = # ----
+#     Orquestrador      # ----
+# = = = = = = = = = = = # ----
+orchestrator <- function(model, data){
+  
+  list_control = control(model)
+  names = names(list_control[['param']])
+  list_control[['param']] = list_control[['param']] %>%
+    map(~to_character(.))
+  list_control[['param']] = put_simbols(list_control[['param']])
+  
+  expression = create_expression(list_control, data)
+  
+  data_model = split_by_validation(data[['validation']])
+  
+  output = list(expr = expression, data = data_model)
+  return(output)
+}
+
+obj = orchestrator(model = rf, data = data)
+
+
+# ===========================================================
 list_data <- list(list(treino = "Treino 1", teste = "Teste 1"),
                   list(treino = "Treino 2", teste = "Teste 2"),
                   list(treino = "Treino 3", teste = "Teste 3"))

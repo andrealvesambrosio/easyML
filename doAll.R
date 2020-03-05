@@ -12,6 +12,7 @@ library(tidyr)
 library(purrr)
 library(caret)
 library(randomForest)
+library(stringr)
 
 dataset = as_tibble(iris)
 
@@ -27,7 +28,7 @@ rf = list(
 data = list(
              data = dataset,
              target = "Species",
-             validation = "kfold_7"
+             validation = "kfold_3"
 )
 
 # = = = = = = = = = = = = = = = # ----
@@ -102,10 +103,10 @@ create_expression <- function(obj, data){
 }
 
 # = = = = = = = = = = = = = = = # ----
-#   Algorithm for validation    # ----
+#   Algorithms for validation    # ----
 # = = = = = = = = = = = = = = = # ----
 
-# Choose the method
+# Choose the method = = = = = = = = = = = =
 split_by_validation <- function(method){
   method = data[['validation']]
   df = data[['data']]
@@ -140,10 +141,12 @@ kfold <- function(x, folds){
   list_data = list()
   for(i in 1:folds){
     train = new_data %>%
-      dplyr::filter(fold != i)
+      dplyr::filter(fold != i) %>%
+      dplyr::select(-fold)
     
     test = new_data %>%
-      dplyr::filter(fold == i)
+      dplyr::filter(fold == i) %>%
+      dplyr::select(-fold)
     
     list_data[[i]] = list(train = train, 
                           test = test)
@@ -158,6 +161,49 @@ kfold <- function(x, folds){
 # Repeated k-fold CV
 # Leave one out CV
 
+# = = = = = = = = = = = = = = = # ----
+#     Metrics for error         # ----
+# = = = = = = = = = = = = = = = # ----
+
+accuracy <- function(pred, real){
+  mean(pred == real)
+}
+
+
+# = = = = = = = = = = = = = = = # ----
+#      Apply the model          # ----
+# = = = = = = = = = = = = = = = # ----
+
+eval_models <- function(dataset, expression){
+  data = dataset[['train']]
+  test = dataset[['test']]
+  
+  my_expression = paste("fit <- ", expression)
+  eval(parse(text = my_expression))
+  
+  print(fit)
+  print(data)
+  print(test)
+  pred = predict(fit, test)
+  print(pred)
+  
+  target_after_parent = str_split(string = expression, 
+                                  pattern = "\\(")[[1]][2]
+  target_name = str_split(target_after_parent, 
+                          pattern = "~")[[1]][1]
+  
+  error = accuracy(pred = pred, real = test[[target_name]])
+
+  return(list(fit, test, error))
+}
+
+map_expressions <- function(expression, dataset){
+  dataset %>%
+    map(~eval_models(., expression))
+}
+
+y = list_xx %>%
+  map(~map_expressions(., obj$data))
 # = = = = = = = = = = = # ----
 #     Orquestrador      # ----
 # = = = = = = = = = = = # ----
@@ -194,7 +240,7 @@ my_function <- function(exp, df){
 }
 
 second_function <- function(df, exp){
-  paste(df$teste, df$treino, exp)
+  paste(df$teste, df$treino, exp, "SECOND FUNCTION")
 }
 
 list_expressions %>%

@@ -28,7 +28,7 @@ rf = list(
 data = list(
              data = dataset,
              target = "Species",
-             validation = "kfold_3"
+             validation = "kfold_17"
 )
 
 # = = = = = = = = = = = = = = = # ----
@@ -80,8 +80,13 @@ create_expression <- function(obj, data){
   } else{
     formula = paste0(data[['target']], "~.")
   }
-  df = expand.grid(obj_param) %>%
-    as_tibble() %>%
+  
+  df_combinations = expand.grid(obj_param) %>%
+    as_tibble()
+
+  
+  
+  df_expressions = df_combinations %>%
     unite(col = params, sep = ", ") %>%
     dplyr::mutate(fun = unlist(obj_model['fun']),
                   package = unlist(obj_model['package']),
@@ -99,7 +104,15 @@ create_expression <- function(obj, data){
     split(.$ID) %>%
     map(~pull(., expression))
   
-  return(df)
+  df_combinations = df_combinations %>%
+    dplyr::mutate(fun = unlist(obj_model['fun']),
+                  N = 1:n()) %>%
+    tidyr::nest(params = -c(fun, N)) %>%
+    dplyr::select(-N)
+  
+
+  return(list(df_control = df_combinations,
+              df_expressions = df_expressions))
 }
 
 # = = = = = = = = = = = = = = = # ----
@@ -174,6 +187,7 @@ accuracy <- function(pred, real){
 #      Apply the model          # ----
 # = = = = = = = = = = = = = = = # ----
 
+# Evaluate the expressions and call the error function
 eval_models <- function(dataset, expression){
   data = dataset[['train']]
   test = dataset[['test']]
@@ -181,11 +195,7 @@ eval_models <- function(dataset, expression){
   my_expression = paste("fit <- ", expression)
   eval(parse(text = my_expression))
   
-  print(fit)
-  print(data)
-  print(test)
   pred = predict(fit, test)
-  print(pred)
   
   target_after_parent = str_split(string = expression, 
                                   pattern = "\\(")[[1]][2]
@@ -193,17 +203,25 @@ eval_models <- function(dataset, expression){
                           pattern = "~")[[1]][1]
   
   error = accuracy(pred = pred, real = test[[target_name]])
-
-  return(list(fit, test, error))
+  return(error)
 }
 
-map_expressions <- function(expression, dataset){
+# Make some information using errors of the folds
+resume_errors <- function(error){
+  error_mean = mean(error)
+  error_var = var(error)
+  error_median = median(error) 
+  
+  out = tibble(mean = error_mean, var = error_var, median = error_median)
+  return(out)
+}
+
+map_ <- function(expression, dataset){
   dataset %>%
     map(~eval_models(., expression))
 }
 
-y = list_xx %>%
-  map(~map_expressions(., obj$data))
+  
 # = = = = = = = = = = = # ----
 #     Orquestrador      # ----
 # = = = = = = = = = = = # ----
@@ -215,34 +233,34 @@ orchestrator <- function(model, data){
     map(~to_character(.))
   list_control[['param']] = put_simbols(list_control[['param']])
   
-  expression = create_expression(list_control, data)
+  combinations = create_expression(list_control, data)
+  
+  expressions = combinations[['df_expressions']]
+  control = combinations[['df_control']] %>%
+    dplyr::mutate(ID = 1:n())
   
   data_model = split_by_validation(data[['validation']])
   
-  output = list(expr = expression, data = data_model)
-  return(output)
+  expr_data = list(expr = expressions, data = data_model)
+  
+  errors = expr_data[['expr']] %>%
+    map(~map_expressions(., expr_data[['data']])) %>%
+    map(~unlist(.)) %>% 
+    map(~resume_errors(.))
+  
+  error_df = errors[[1]]
+  for(i in 2:length(errors)){
+    error_df = rbind(error_df, errors[[i]])
+  }
+  
+  error_df = error_df %>%
+    dplyr::mutate(ID = 1:n())
+  
+  my_df = control %>% 
+    left_join(error_df, by = 'ID') %>%
+    dplyr::select(-ID)
+  
+  return(my_df)
 }
 
 obj = orchestrator(model = rf, data = data)
-
-
-# ===========================================================
-list_data <- list(list(treino = "Treino 1", teste = "Teste 1"),
-                  list(treino = "Treino 2", teste = "Teste 2"),
-                  list(treino = "Treino 3", teste = "Teste 3"))
-
-list_expressions <- list("expression 1", "expression 2")
-
-
-my_function <- function(exp, df){
-  df %>%
-    map(~second_function(., exp))
-}
-
-second_function <- function(df, exp){
-  paste(df$teste, df$treino, exp, "SECOND FUNCTION")
-}
-
-list_expressions %>%
-  map(~my_function(., list_data))
-#

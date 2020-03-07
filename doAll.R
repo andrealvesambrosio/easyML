@@ -28,7 +28,8 @@ rf = list(
 data = list(
              data = dataset,
              target = "Species",
-             validation = "kfold_17"
+             validation = "kfold_3",
+             metric = "accuracy"
 )
 
 # = = = = = = = = = = = = = = = # ----
@@ -186,9 +187,30 @@ execute_validation.kfold  = function(data){
 #     Metrics for error         # ----
 # = = = = = = = = = = = = = = = # ----
 
-accuracy <- function(pred, real){
-  mean(pred == real)
+use_metric <- function(pred, real, metric){
+  data = list(pred = pred, real = real)
+  
+  if(grepl(x = metric, pattern = 'accuracy')){
+    class(data) = "accuracy"
+  }
+  execute_metric(data)
 }
+# Execute by the class (metric)
+execute_metric <- function(data){
+  UseMethod("execute_metric")
+}
+
+# Default
+execute_metric.default = function(data){
+  print("Please, choose a valid metric for evaluate.")
+}
+
+# Accuracy
+execute_metric.accuracy = function(data){
+  error = mean(data[['pred']] == data[['real']])
+  return(error)
+}
+
 
 
 # = = = = = = = = = = = = = = = # ----
@@ -196,7 +218,7 @@ accuracy <- function(pred, real){
 # = = = = = = = = = = = = = = = # ----
 
 # Evaluate the expressions and call the error function
-eval_models <- function(dataset, expression){
+eval_models <- function(dataset, expression, metric){
   data = dataset[['train']]
   test = dataset[['test']]
   
@@ -209,8 +231,10 @@ eval_models <- function(dataset, expression){
                                   pattern = "\\(")[[1]][2]
   target_name = str_split(target_after_parent, 
                           pattern = "~")[[1]][1]
-  
-  error = accuracy(pred = pred, real = test[[target_name]])
+
+  error = use_metric(pred = pred, 
+                     real = test[[target_name]], 
+                     metric = metric)
   return(error)
 }
 
@@ -224,9 +248,9 @@ resume_errors <- function(error){
   return(out)
 }
 
-map_expressions <- function(expression, dataset){
+map_expressions <- function(expression, dataset, metric){
   dataset %>%
-    map(~eval_models(., expression))
+    map(~eval_models(., expression, metric))
 }
 
   
@@ -252,9 +276,10 @@ orchestrator <- function(model, data){
   expr_data = list(expr = expressions, data = data_model)
   
   errors = expr_data[['expr']] %>%
-    map(~map_expressions(., expr_data[['data']])) %>%
+    map(~map_expressions(., expr_data[['data']], metric = data[['metric']])) %>%
     map(~unlist(.)) %>% 
     map(~resume_errors(.))
+  
   
   error_df = errors[[1]]
   for(i in 2:length(errors)){

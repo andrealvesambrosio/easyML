@@ -21,7 +21,7 @@ rf = list(
            fun = "randomForest",
            package = "randomForest",
            importance = c(TRUE, FALSE),
-           ntree = c(100, 250, 500, 750, 1000),
+           ntree = c(100, 1000),
            mtry = c(2, 4)
           )
 
@@ -67,8 +67,6 @@ put_simbols <- function(obj){
   }
   return(obj)
 }
-
-###########################
 
 # Dataframe's combinations
 create_expression <- function(obj, data){
@@ -119,36 +117,46 @@ create_expression <- function(obj, data){
 #   Algorithms for validation    # ----
 # = = = = = = = = = = = = = = = # ----
 
-# Choose the method = = = = = = = = = = = =
-split_by_validation <- function(method){
+# We will use a S3 Class to create the cases for validations
+
+# Defining the class and call the main function
+split_by_validation <- function(data){
   method = data[['validation']]
-  df = data[['data']]
   
-  # K-fold
   if(grepl(x = method, pattern = 'kfold')){
-    fold = str_split(string = method, pattern = "_")[[1]][2]
-    if(is.na(fold)){
-      fold = 10
-    } else{
-      fold = as.numeric(fold)  
-    }
-    data_list = kfold(df, fold)
+    class(data) = "kfold"
   }
-  
-  return(data_list)
+  execute_validation(data)
 }
 
-# Methods = = = = = = = =
+# Execute by the class (method of validation)
+execute_validation <- function(data){
+  method = data[['validation']]
+  df = data[['data']]
+  UseMethod("execute_validation")
+}
 
-# K-fold Cross Validation
-kfold <- function(x, folds){
-  len <- nrow(x)
+# Default
+execute_validation.default = function(data){
+  print("Please, choose a valid method.")
+}
+
+# K-Fold
+execute_validation.kfold  = function(data){
+  folds = str_split(string = method, pattern = "_")[[1]][2]
+  if(is.na(folds)){
+    folds = 10
+  } else{
+    folds = as.numeric(folds)  
+  }
+  
+  len <- nrow(df)
   index <- cut(seq(1, len), 
                breaks = folds, 
                labels = FALSE) %>%
     sample()
   
-  new_data <- x %>% 
+  new_data <- df %>% 
     dplyr::mutate(fold = index) 
   
   list_data = list()
@@ -216,7 +224,7 @@ resume_errors <- function(error){
   return(out)
 }
 
-map_ <- function(expression, dataset){
+map_expressions <- function(expression, dataset){
   dataset %>%
     map(~eval_models(., expression))
 }
@@ -239,7 +247,7 @@ orchestrator <- function(model, data){
   control = combinations[['df_control']] %>%
     dplyr::mutate(ID = 1:n())
   
-  data_model = split_by_validation(data[['validation']])
+  data_model = split_by_validation(data = data)
   
   expr_data = list(expr = expressions, data = data_model)
   

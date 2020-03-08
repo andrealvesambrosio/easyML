@@ -132,8 +132,8 @@ split_by_validation <- function(data){
 
 # Execute by the class (method of validation)
 execute_validation <- function(data){
-  method = data[['validation']]
   df = data[['data']]
+  method = data[['validation']]
   UseMethod("execute_validation")
 }
 

@@ -13,17 +13,28 @@ library(purrr)
 library(caret)
 library(randomForest)
 library(stringr)
+library(e1071)
 
 dataset = as_tibble(iris)
 
 # Input params
+
+svm = list(
+           fun = "svm",
+           package = "e1071",
+           kernel = c('linear', 'polynomial', 'sigmoid')
+)
+
 rf = list(
            fun = "randomForest",
            package = "randomForest",
            importance = c(TRUE, FALSE),
-           ntree = c(100, 1000),
-           mtry = c(2, 4)
+           ntree = c(100, 150, 200, 250, 300, 350, 400, 
+                     450, 500, 550, 600, 700, 800, 900, 1000),
+           mtry = c(2, 3, 4)
           )
+
+models = list(rf, rf)
 
 data = list(
              data = dataset,
@@ -44,7 +55,11 @@ control <- function(obj){
   fun_list = obj[control_index]
   param_list = obj[!control_index]
   
-  control = list(model = fun_list, param = param_list)
+  qtd = 1
+  for(i in param_list){
+    qtd = qtd*length(i)
+  }
+  control = list(model = fun_list, param = param_list, qtd = qtd)
   
   return(control)
 }
@@ -235,6 +250,9 @@ eval_models <- function(dataset, expression, metric){
   error = use_metric(pred = pred, 
                      real = test[[target_name]], 
                      metric = metric)
+  
+  out = list(error = error, fit = fit)
+  
   return(error)
 }
 
@@ -248,7 +266,8 @@ resume_errors <- function(error){
   return(out)
 }
 
-map_expressions <- function(expression, dataset, metric){
+map_expressions <- function(expression, dataset, metric, pb){
+  pb$tick()$print()
   dataset %>%
     map(~eval_models(., expression, metric))
 }
@@ -257,9 +276,14 @@ map_expressions <- function(expression, dataset, metric){
 # = = = = = = = = = = = # ----
 #     Orquestrador      # ----
 # = = = = = = = = = = = # ----
-orchestrator <- function(model, data){
+single_orchestrator <- function(model, data){
   
   list_control = control(model)
+  
+  message(paste0("\n(", model[['fun']], ") Modelando..."))
+  pb <- progress_estimated(list_control[['qtd']])
+  
+  
   names = names(list_control[['param']])
   list_control[['param']] = list_control[['param']] %>%
     map(~to_character(.))
@@ -276,7 +300,8 @@ orchestrator <- function(model, data){
   expr_data = list(expr = expressions, data = data_model)
   
   errors = expr_data[['expr']] %>%
-    map(~map_expressions(., expr_data[['data']], metric = data[['metric']])) %>%
+    map(~map_expressions(., expr_data[['data']], metric = data[['metric']],
+                         pb = pb)) %>%
     map(~unlist(.)) %>% 
     map(~resume_errors(.))
   
@@ -296,4 +321,11 @@ orchestrator <- function(model, data){
   return(my_df)
 }
 
-obj = orchestrator(model = rf, data = data)
+multiple_orchestrator <- function(models, data){
+  x = models %>%
+    map(~single_orchestrator(., data = data))
+  
+  return(x)
+}
+
+obj = multiple_orchestrator(models = models, data= data)
